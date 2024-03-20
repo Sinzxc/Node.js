@@ -1,15 +1,18 @@
-const mongoose=require('mongoose')
+const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const User = require('../../model/User.js');
 const Role = require('../../model/Role.js');
 const jwt = require('jsonwebtoken');
-const { secret } = require('../../authConfig.js');
-
+const { secret, refreshSecret } = require('../../authConfig.js');
 
 mongoose.connect('mongodb://localhost:27017/educateDB');
 
-const generateToken = (user) => {
-    return jwt.sign({ username: user.username }, secret, { expiresIn: '1h' });
+const generateAccessToken = (user) => {
+    return jwt.sign({ username: user.username }, secret, { expiresIn: '15m' });
+};
+
+const generateRefreshToken = (user) => {
+    return jwt.sign({ username: user.username }, refreshSecret, { expiresIn: '7d' });
 };
 
 const authenticateToken = (req, res, next) => {
@@ -28,49 +31,33 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-exports.posts = function as (app) {
-    app.post('/api/signin', async (req, res) => {
+exports.signin = async function(req, res) {
+    const user = await User.UserDb.findOne({ username: req.body.username });
+    if (!user) {
+        return res.status(404).send('Пользователь не найден');
+    }
+    const isPasswordValid = await bcrypt.compare(req.body.password, user.password);
 
-        const user = await User.UserDb.findOne({ username:req.body.username });
-        if(user==null)
-        {
-            return res.status(404).send('Пользователь не найден');
-        }
-        const isPasswordValid = await bcrypt.compare(req.body.password, user.password);
-
-        if(isPasswordValid) {
-            const token = generateToken(user);
-            res.status(200).json({ token });
-        }
-        else{
-            res.status(403).send('Ошибка авторизации');
-        }
-    });
-
-    app.get('/api/protected', authenticateToken, (req, res) => {
-        res.send('Это защищенный маршрут');
-    });
-
-    app.get('/api/user', authenticateToken, async (req, res) => {
-        const authHeader = req.headers['authorization'];
-        const token = authHeader && authHeader.split(' ')[1];
-        
-        if (token == null) {
-            return res.sendStatus(401);
-        }   
-        try {
-            const decodedToken = jwt.verify(token, secret);
-            const username = decodedToken.username;   
-            const user = await User.UserDb.findOne({ username: username });
-            const{role}=user
-            const roleObject = await Role.RoleDb.findOne({ _id: role.toString() });
-            res.send(roleObject.name);
-        } catch (error) {
-            console.error(error);
-            res.sendStatus(403); 
-        }
-    });
+    if (isPasswordValid) {
+        const accessToken = generateAccessToken(user);
+        const refreshToken = generateRefreshToken(user);
+        res.status(200).json({ accessToken, refreshToken });
+    } else {
+        res.status(403).send('Ошибка авторизации');
+    }
 };
 
+exports.refreshToken = async function(req, res) {
+    const refreshToken = req.body.refreshToken;
+    if (!refreshToken) {
+        return res.status(400).send('Отсутствует токен обновления');
+    }
 
-
+    jwt.verify(refreshToken, refreshSecret, async (err, user) => {
+        if (err) {
+            return res.status(403).send('Неверный токен обновления');
+        }
+        const accessToken = generateAccessToken(user);
+        res.status(200).json({ accessToken });
+    });
+};

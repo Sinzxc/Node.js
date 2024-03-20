@@ -4,9 +4,7 @@ const bcrypt = require('bcrypt');
 const User = require('../../model/User')
 
 
-exports.posts = function as (app) {
-    app.post('/api/registerUser', async (req, res) => {
-        console.log(req.body);
+    exports.registrUser= async function(req,res){
 
         const hashedPassword = await bcrypt.hash(req.body.password, 10);
 
@@ -43,7 +41,6 @@ exports.posts = function as (app) {
                 }
                
             });
-    });
-};
+    }
 
 
